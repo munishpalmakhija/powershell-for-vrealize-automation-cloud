@@ -22,6 +22,7 @@ It is a simple two-file module stored under module directory.
 To install it, download above 2 files to a PowerShell enabled machine and navigate to the folder and execute following command
 
 | Import-Module .\PowervRACloud.psd1  |
+| ------------- |
 
 # Getting Started
 
@@ -39,6 +40,14 @@ Quick Examples on how to get started
 # Documentation
 
 You can download the <a href="https://github.com/munishpalmakhija/powershell-for-vrealize-automation-cloud/blob/master/doc/PowervRACloudDocumentation.html">documentation</a> file which has instructions for every command
+
+# Contribution
+
+You can use following methods or you can reach out to me via <a href="https://twitter.com/powervracloud">twitter</a>
+
+1. Bugs and Issues - Please use the issues register with details of the problem.
+2. Feature Requests - Please use the issues register with details of what's required.
+3. For Code contribution (bug fixes, or feature request), please request fork of the Project, create a feature branch, then submit a pull request.
 
 # License 
 
