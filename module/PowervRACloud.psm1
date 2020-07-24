@@ -1,5 +1,3 @@
-# Copyright 2020 VMware, Inc.
-# SPDX-License-Identifier: GPL-2.0-or-later
 #Author - Munishpal Makhija
 
 #    ===========================================================================
@@ -48,8 +46,8 @@ function Connect-vRA-Cloud
     .NOTES
     ==============================================================================================================================================
     Created by:    Munishpal Makhija                                                                                                              
-    Version:       1.0
-    Date:          01/13/2020
+    Version:       1.1
+    Date:          06/29/2020
     Organization:  VMware
     Blog:          http://bit.ly/MyvBl0g
     ==============================================================================================================================================
@@ -68,13 +66,17 @@ function Connect-vRA-Cloud
       [ValidateNotNullOrEmpty()]
       [Security.SecureString]$APIToken
   )  
-  
-  $API = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($APIToken))
+  if (($PSVersionTable.PSVersion.Major -eq 6)) {
+     $API = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($APIToken)) 
+  }
+  elseif (($PSVersionTable.PSVersion.Major -eq 7)) {
+     $API = ConvertFrom-SecureString -SecureString $APIToken -AsPlainText
+  }  
   $url = "https://console.cloud.vmware.com/csp/gateway/am/api/auth/api-tokens/authorize?refresh_token="+ $API
   $headers = @{"Accept"="application/json";
  "Content-Type"="application/json";
 }
-$payload = @{"Key"=$API;}
+$payload = @{"refresh_token"=$API;}
 $body= $payload | Convertto-Json
 $response = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body -ErrorAction:Stop
   if($response)
@@ -129,6 +131,7 @@ function Connect-vRA-Server
   $pwd = $Credential.Password
   $username = $Credential.Username
   $password = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pwd))
+  #$password = ConvertFrom-SecureString -SecureString $pwd -AsPlainText
   $uri = "/csp/gateway/am/api/login?access_token"
   $url = "https://"+ $Server+ $uri
   $headers = @{"Accept"="application/json";
@@ -636,6 +639,102 @@ function New-vRA-Server-CloudAccount-VMC
     }
 }}
 
+
+######################### New-vRA-CloudAccount-AWS ######################### 
+
+function New-vRA-CloudAccount-AWS
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          07/13/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Creates new vRA Cloud Account for vSphere endpoint in a particular Org 
+    .DESCRIPTION
+        This cmdlet creates new vRA Cloud Account for vSphere endpoint in a particular Org 
+    .EXAMPLE
+        New-vRA-CloudAccount-AWS -CloudAccountName "CloudAccountName" -awsaccesskeyid "AWS Access Key" -awssecretAccessKey $awssecretAccessKey -awsregionid  "us-east-1" 
+        Use ConvertTo-SecureString "AWS Secret AccessKey" -AsPlainText -Force and store it in variable and pass that as an Input     
+#>
+      param (
+      [Parameter (Mandatory=$False)]
+        # vRA Connection object
+        [ValidateNotNullOrEmpty()]
+        [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$true)]
+        # vRA Cloud Account Name
+        [ValidateNotNullOrEmpty()]
+        [string]$CloudAccountName,        
+      [Parameter (Mandatory=$true)]
+        # AWS Access Key
+        [ValidateNotNullOrEmpty()]
+        [string]$awsaccesskeyid,
+        # AWS Secret AccessKey
+        [ValidateNotNullOrEmpty()]
+        [Security.SecureString]$awssecretAccessKey,
+      [Parameter (Mandatory=$true)]
+        # AWS Region ID
+        [ValidateNotNullOrEmpty()]
+        [string]$awsregionid            
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+              if (($PSVersionTable.PSVersion.Major -eq 6)) {
+              $SecretAccessKey = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($awssecretAccessKey)) 
+              }
+              elseif (($PSVersionTable.PSVersion.Major -eq 7)) {
+                $SecretAccessKey = ConvertFrom-SecureString -SecureString $awssecretAccessKey -AsPlainText
+              } 
+            $vra_uri = "/iaas/api/cloud-accounts"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $description = "Created-by-PowervRACloud"
+            $region = @($awsregionid)           
+            $vra_payload = @{
+              "privateKey"=$SecretAccessKey;
+              "regionIds"=$region;               
+              "cloudAccountType"="aws";
+              "name"=$cloudaccountname;
+              "description"=$description;                                                        
+              "privateKeyId"=$awsaccessKeyId;
+              "createDefaultZones"="true";             
+              }   
+            $vra_body = $vra_payload | Convertto-Json
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop
+            $response
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                if ($global:DefaultVIServers.Count -gt 0) {Disconnect-VIServer * -Confirm:$false}
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                if ($global:DefaultVIServers.Count -gt 0) {Disconnect-VIServer * -Confirm:$false}
+                Write-Error "Error Adding vRA Cloud Accounts"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+
 ######################### Get-vRA-CloudAccounts ######################### 
 
 function Get-vRA-CloudAccounts
@@ -1087,6 +1186,206 @@ function New-vRA-FlavorProfiles-vSphere
 }}
 
 
+######################### New-vRA-FlavorProfiles-VMC ######################### 
+
+function New-vRA-FlavorProfiles-VMC
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          06/30/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Creates new vRA Flavor Profiles for VMC endpoint in a particular Org 
+    .DESCRIPTION
+        This cmdlet creates new vRA Flavor Profile for VMC endpoint in a particular Org 
+    .EXAMPLE
+        New-vRA-FlavorProfiles-VMC -ProfileName "ProfileName" -FlavorName "FlavorName" -FlavorCpu "CPUCount" -FlavorMemory "MemoryinMB" -RegionName "vRA Zone Name"  
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+    [Parameter (Mandatory=$true)]
+      # vRA Profile Name
+      [ValidateNotNullOrEmpty()]
+      [string]$ProfileName,      
+    [Parameter (Mandatory=$true)]
+      # vRA Flavor Name
+      [ValidateNotNullOrEmpty()]
+      [string]$FlavorName,
+    [Parameter (Mandatory=$true)]
+      # vRA Flavor CPU Count
+      [ValidateNotNullOrEmpty()]
+      [string]$FlavorCpu,
+    [Parameter (Mandatory=$true)]
+      # vRA Flavor Memory in MB
+      [ValidateNotNullOrEmpty()]
+      [string]$FlavorMemory,      
+    [Parameter (Mandatory=$true)]
+      # vRA Zone Name
+      [ValidateNotNullOrEmpty()]
+      [string]$RegionName       
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+            $vra_uri = "/iaas/api/flavor-profiles"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }            
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            
+            $ca = Get-vRA-CloudAccounts | where{$_.name -match $RegionName} | Select id
+            $caid =  $ca.id
+            $region = Get-vRA-Regions | where{$_.cloudAccountId -ne $caid -and ($_.name -eq "SDDC-Datacenter")} | Select id
+            $regionid = $region.id
+            $flavor = $flavorname+ ":"
+            $vra_payload = "{
+              name: $profilename,
+              flavorMapping:{
+                $flavor{
+                  cpuCount: $flavorcpu,
+                  memoryInMB: $flavormemory
+              }},
+              regionId: $regionid
+              }"
+            $vra_body = $vra_payload
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+            $response                      
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error creating vRA Flavor Profiles vSphere"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### New-vRA-FlavorProfiles-AWS ######################### 
+
+function New-vRA-FlavorProfiles-AWS
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          06/30/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Creates new vRA Flavor Profiles for AWS endpoint in a particular Org 
+    .DESCRIPTION
+        This cmdlet creates new vRA Flavor Profile for AWS endpoint in a particular Org 
+    .EXAMPLE
+        New-vRA-FlavorProfiles-AWS -ProfileName "ProfileName" -FlavorName "FlavorName" -FlavorType "EC2 Instance Type" -RegionName "vRA Zone Name"  
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+    [Parameter (Mandatory=$true)]
+      # vRA Profile Name
+      [ValidateNotNullOrEmpty()]
+      [string]$ProfileName,      
+    [Parameter (Mandatory=$true)]
+      # vRA Flavor Name
+      [ValidateNotNullOrEmpty()]
+      [string]$FlavorName,
+    [Parameter (Mandatory=$true)]
+      # vRA Flavor Type
+      [ValidateNotNullOrEmpty()]
+      [string]$FlavorType,
+    [Parameter (Mandatory=$true)]
+      # vRA Zone Name
+      [ValidateNotNullOrEmpty()]
+      [string]$RegionName       
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+            $vra_uri = "/iaas/api/flavor-profiles"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }            
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            
+            $ca = Get-vRA-CloudAccounts | where{$_.name -match $RegionName} | Select id
+            $caid =  $ca.id
+            $region = Get-vRA-Regions | where{$_.cloudAccountId -match $caid} | Select id
+            $regionid = $region.id
+            $flavor = $flavorname+ ":"
+            $vra_payload = "{
+              name: $profilename,
+              flavorMapping:{
+                $flavor{
+                  name: $flavortype
+              }},
+              regionId: $regionid
+              }"
+            $vra_body = $vra_payload
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+            $response                      
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error creating vRA Flavor Profiles vSphere"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+
 ######################### New-vRA-ImageMapping ######################### 
 
 function New-vRA-ImageMapping
@@ -1187,6 +1486,206 @@ function New-vRA-ImageMapping
 }}
 
 
+######################### New-vRA-ImageMapping-VMC ######################### 
+
+function New-vRA-ImageMapping-VMC
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          06/30/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Creates new vRA Image Mapping  for VMC endpoint in a particular Org 
+    .DESCRIPTION
+        This cmdlet creates new vRA Image Mapping for VMC endpoint in a particular Org 
+    .EXAMPLE
+        New-vRA-ImageMapping-VMC -ProfileName "ProfileName" -vRAImageName "vRA Image Name" -CloudAccountName "vRA Cloud Account Name" -VCImage "vCenter Image Name" 
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+    [Parameter (Mandatory=$true)]
+      # vRA Profile Name
+      [ValidateNotNullOrEmpty()]
+      [string]$ProfileName,
+    [Parameter (Mandatory=$true)]
+      # vRA Image Name
+      [ValidateNotNullOrEmpty()]
+      [string]$vRAImageName,            
+      # vRA Cloud Account Name
+    [Parameter (Mandatory=$true)]      
+      [ValidateNotNullOrEmpty()]
+      [string]$CloudAccountName,
+    [Parameter (Mandatory=$true)]
+      # vCenter Image Name
+      [ValidateNotNullOrEmpty()]
+      [string]$VCImage         
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+            $vra_uri = "/iaas/api/image-profiles"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }            
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            
+            $image = Get-vRA-FabricImagesFilter -filtertype "name" -filtervalue $VCImage
+            $imageid =  $image[0].id
+            $ca = Get-vRA-CloudAccounts | where{$_.name -match $CloudAccountName}
+            $caid =  $ca.id
+            $region = Get-vRA-Regions | where{$_.cloudAccountId -ne $caid -and ($_.name -eq "SDDC-Datacenter")} 
+            $regionid = $region.id
+            $vraimage = $vraimagename+ ":"
+            $vra_payload = "{
+              name: $profilename,
+              imageMapping:{
+                $vraimage{
+                  id: $imageid
+              }},
+              regionId: $regionid
+              }"  
+            $vra_body = $vra_payload
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+            $response                      
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error creating vRA Image Mapping"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### New-vRA-ImageMapping-AWS ######################### 
+
+function New-vRA-ImageMapping-AWS
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          06/30/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Creates new vRA Image Mapping for AWS in a particular Org 
+    .DESCRIPTION
+        This cmdlet creates new vRA Image Mapping for AWS in a particular Org 
+    .EXAMPLE
+        New-vRA-ImageMapping-AWS -ProfileName "ProfileName" -vRAImageName "vRA Image Name" -CloudAccountName "vRA Cloud Account Name" -AMI "ami-ubuntu-16.04-1.9.1-00-1516139717" 
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+    [Parameter (Mandatory=$true)]
+      # vRA Profile Name
+      [ValidateNotNullOrEmpty()]
+      [string]$ProfileName,
+    [Parameter (Mandatory=$true)]
+      # vRA Image Name
+      [ValidateNotNullOrEmpty()]
+      [string]$vRAImageName,            
+      # vRA Cloud Account Name
+    [Parameter (Mandatory=$true)]      
+      [ValidateNotNullOrEmpty()]
+      [string]$CloudAccountName,
+    [Parameter (Mandatory=$true)]
+      # AWS AMI ID
+      [ValidateNotNullOrEmpty()]
+      [string]$AMI         
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+            $vra_uri = "/iaas/api/image-profiles"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }            
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            
+            $ca = Get-vRA-CloudAccounts | where{$_.name -match $CloudAccountName}
+            $caid =  $ca.id
+            $region = Get-vRA-Regions | where{$_.cloudAccountId -match $caid}
+            $regionid = $region.id
+            $externalid = $region.externalRegionId
+            $image = Get-vRA-FabricImagesFilter -filtertype "name" -filtervalue $AMI | where{$_.externalRegionId -eq $externalid}
+            $imageid =  $image.id
+
+            $vraimage = $vraimagename+ ":"
+            $vra_payload = "{
+              name: $profilename,
+              imageMapping:{
+                $vraimage{
+                  id: $imageid
+              }},
+              regionId: $regionid
+              }"  
+            $vra_body = $vra_payload
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            $response                      
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error creating vRA Image Mapping"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
 ######################### New-vRA-NetworkProfile ######################### 
 
 function New-vRA-NetworkProfile
@@ -1256,6 +1755,188 @@ function New-vRA-NetworkProfile
             $region = Get-vRA-Regions | where{$_.cloudAccountId -match $caid}
             $regionid = $region.id
             $network = Get-vRA-FabricNetworksFilter -filtertype "name" -filtervalue $VCNetwork
+            $networkid =  $network.id            
+            $vra_payload = "{
+              name: $profilename,
+              fabricNetworkIds: [ '$networkid' ],
+              regionId: $regionid
+              }" 
+            $vra_body = $vra_payload
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+            $response                   
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error creating vRA Network Profile"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### New-vRA-NetworkProfile-VMC ######################### 
+
+function New-vRA-NetworkProfile-VMC
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          06/30/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Creates new vRA Network Profile for VMC with an existing Network in a particular Org 
+    .DESCRIPTION
+        This cmdlet creates new vRA Network Profile for VMC with an existing Network in a particular Org 
+    .EXAMPLE
+        New-vRA-NetworkProfile-VMC -ProfileName "ProfileName" -CloudAccountName "vRA Cloud Account Name" -VCNetwork "vCenter Network Name" 
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+    [Parameter (Mandatory=$true)]
+      # vRA Profile Name
+      [ValidateNotNullOrEmpty()]
+      [string]$ProfileName,           
+      # vRA Cloud Account Name
+    [Parameter (Mandatory=$true)]      
+      [ValidateNotNullOrEmpty()]
+      [string]$CloudAccountName,
+    [Parameter (Mandatory=$true)]
+      # vCenter Network Name
+      [ValidateNotNullOrEmpty()]
+      [string]$VCNetwork         
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+            $vra_uri = "/iaas/api/network-profiles"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }            
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            
+            $ca = Get-vRA-CloudAccounts | where{$_.name -match $CloudAccountName}
+            $caid =  $ca.id
+            $region = Get-vRA-Regions | where{$_.cloudAccountId -ne $caid -and ($_.name -eq "SDDC-Datacenter")} 
+            $regionid = $region.id
+            $network = Get-vRA-FabricNetworksFilter -filtertype "name" -filtervalue $VCNetwork
+            $networkid =  $network.id            
+            $vra_payload = "{
+              name: $profilename,
+              fabricNetworkIds: [ '$networkid' ],
+              regionId: $regionid
+              }" 
+            $vra_body = $vra_payload
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+            $response                   
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error creating vRA Network Profile"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### New-vRA-NetworkProfile-AWS ######################### 
+
+function New-vRA-NetworkProfile-AWS
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          07/07/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Creates new vRA Network Profile with an existing Network in a particular Org 
+    .DESCRIPTION
+        This cmdlet creates new vRA Network Profile with an existing Network in a particular Org 
+    .EXAMPLE
+        New-vRA-NetworkProfile-AWS -ProfileName "ProfileName" -CloudAccountName "vRA Cloud Account Name" -AWSNetwork "AWS Network Name" 
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+    [Parameter (Mandatory=$true)]
+      # vRA Profile Name
+      [ValidateNotNullOrEmpty()]
+      [string]$ProfileName,           
+      # vRA Cloud Account Name
+    [Parameter (Mandatory=$true)]      
+      [ValidateNotNullOrEmpty()]
+      [string]$CloudAccountName,
+    [Parameter (Mandatory=$true)]
+      # AWS Network Name
+      [ValidateNotNullOrEmpty()]
+      [string]$AWSNetwork         
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+            $vra_uri = "/iaas/api/network-profiles"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }            
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            
+            $ca = Get-vRA-CloudAccounts | where{$_.name -match $CloudAccountName}
+            $caid =  $ca.id
+            $region = Get-vRA-Regions | where{$_.cloudAccountId -match $caid}
+            $regionid = $region.id
+            $network = Get-vRA-FabricNetworksFilter -filtertype "name" -filtervalue $AWSNetwork
             $networkid =  $network.id            
             $vra_payload = "{
               name: $profilename,
@@ -1376,6 +2057,199 @@ function New-vRA-vSphereStorageProfile
     }
 }}
 
+######################### New-vRA-vSphereStorageProfile-VMC ######################### 
+
+function New-vRA-vSphereStorageProfile-VMC
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          06/30/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Creates new vRA vSphere Storage Profile for VMC datastore in a particular Org 
+    .DESCRIPTION
+        This cmdlet creates new vRA vSphere Storage Profile for VMC datastore in a particular Org 
+    .EXAMPLE
+        New-vRA-vSphereStorageProfile-VMC -ProfileName "ProfileName" -CloudAccountName "vRA Cloud Account Name" -VCDatastore "vCenter Datastore Name" 
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+    [Parameter (Mandatory=$true)]
+      # vRA Profile Name
+      [ValidateNotNullOrEmpty()]
+      [string]$ProfileName,           
+      # vRA Cloud Account Name
+    [Parameter (Mandatory=$true)]      
+      [ValidateNotNullOrEmpty()]
+      [string]$CloudAccountName,
+    [Parameter (Mandatory=$true)]
+      # vCenter Network Name
+      [ValidateNotNullOrEmpty()]
+      [string]$VCDatastore            
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+            $vra_uri = "/iaas/api/storage-profiles"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }            
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $ca = Get-vRA-CloudAccounts | where{$_.name -match $CloudAccountName}
+            $caid =  $ca.id
+            $region = Get-vRA-Regions | where{$_.cloudAccountId -ne $caid -and ($_.name -eq "SDDC-Datacenter")}
+            $regionid = $region.id
+            $ds = Get-vRA-FabricvSphereDatastoresFilter -filtertype "name" -filtervalue $VCDatastore | where {$_.CloudAccountIds -ne $caid}
+            $dsid =  $ds.id            
+            $defaultitem = "true"
+            $ds_id = "'"+ $dsid+ "'"
+            $vra_payload = "{
+              name: $profilename, 
+              defaultItem: $defaultitem,
+              diskTargetProperties:{
+                  datastoreId: $ds_id
+              },              
+              regionId: $regionid
+              }" 
+            $vra_body = $vra_payload
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+            $response                      
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error creating vRA vSphere Storage Profile"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### New-vRA-StorageProfile-AWS ######################### 
+
+function New-vRA-StorageProfile-AWS
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          07/07/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Creates new vRA Storage Profile for AWS datastore in a particular Org 
+    .DESCRIPTION
+        This cmdlet creates new vRA Storage Profile for AWS datastore in a particular Org 
+    .EXAMPLE
+        New-vRA-StorageProfile-AWS -ProfileName "ProfileName" -CloudAccountName "vRA Cloud Account Name" -DeviceType "EBS" -VolumeType "gp2" 
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+    [Parameter (Mandatory=$true)]
+      # vRA Profile Name
+      [ValidateNotNullOrEmpty()]
+      [string]$ProfileName,           
+      # vRA Cloud Account Name
+    [Parameter (Mandatory=$true)]      
+      [ValidateNotNullOrEmpty()]
+      [string]$CloudAccountName,
+    [Parameter (Mandatory=$true)]
+      # AWS Device Type
+      [ValidateNotNullOrEmpty()]
+      [string]$DeviceType,
+    [Parameter (Mandatory=$true)]
+      # AWS Volume Type
+      [ValidateNotNullOrEmpty()]
+      [string]$VolumeType                  
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+            $vra_uri = "/iaas/api/storage-profiles"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }            
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            
+
+            $ca = Get-vRA-CloudAccounts | where{$_.name -match $CloudAccountName}
+            $caid =  $ca.id
+            $region = Get-vRA-Regions | where{$_.cloudAccountId -match $caid}
+            $regionid = $region.id           
+            $defaultitem = "true"
+            $vra_payload = "{
+              name: $profilename, 
+              defaultItem: $defaultitem,
+              diskProperties:{
+                  deviceType: $DeviceType,
+                  volumeType: $VolumeType    
+              },                              
+              regionId: $regionid
+              }" 
+            $vra_body = $vra_payload
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+            $response                      
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error creating vRA vSphere Storage Profile"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
 
 ######################### Get-vRA-FlavorProfiles ######################### 
 
