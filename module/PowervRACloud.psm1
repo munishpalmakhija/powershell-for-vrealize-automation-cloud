@@ -105,8 +105,8 @@ function Connect-vRA-Server
     .NOTES
     ==============================================================================================================================================
     Created by:    Munishpal Makhija                                                                                                              
-    Version:       1.0
-    Date:          03/18/2020
+    Version:       1.1
+    Date:          10/06/2020
     Organization:  VMware
     Blog:          http://bit.ly/MyvBl0g
     ==============================================================================================================================================
@@ -130,8 +130,12 @@ function Connect-vRA-Server
   
   $pwd = $Credential.Password
   $username = $Credential.Username
-  $password = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pwd))
-  #$password = ConvertFrom-SecureString -SecureString $pwd -AsPlainText
+  if (($PSVersionTable.PSVersion.Major -eq 6)) {
+     $password = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pwd))
+  }
+  elseif (($PSVersionTable.PSVersion.Major -eq 7)) {
+     $password = ConvertFrom-SecureString -SecureString $pwd -AsPlainText
+  }    
   $uri = "/csp/gateway/am/api/login?access_token"
   $url = "https://"+ $Server+ $uri
   $headers = @{"Accept"="application/json";
@@ -184,6 +188,7 @@ function Disconnect-vRA-Cloud
         Remove-Variable -name defaultvRAConnection -scope global
     }
 }
+
 
 
 ######################### New-vRA-CloudAccount-vSphere ######################### 
@@ -649,8 +654,8 @@ function New-vRA-CloudAccount-AWS
     .NOTES
     ==============================================================================================================================================
     Created by:    Munishpal Makhija                                                                                                              
-    Version:       1.0
-    Date:          07/13/2020
+    Version:       1.1
+    Date:          07/15/2020
     Organization:  VMware
     Blog:          http://bit.ly/MyvBl0g
     ==============================================================================================================================================
@@ -701,6 +706,14 @@ function New-vRA-CloudAccount-AWS
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }             
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -717,7 +730,7 @@ function New-vRA-CloudAccount-AWS
               "createDefaultZones"="true";             
               }   
             $vra_body = $vra_payload | Convertto-Json
-            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -SkipCertificateCheck:$SkipSSLCheck -ErrorAction:Stop
             $response
           } catch {
             if($_.Exception.Response.StatusCode -eq "Unauthorized") {
@@ -733,6 +746,218 @@ function New-vRA-CloudAccount-AWS
             }
     }
 }}
+
+  ######################### New-vRA-CloudAccount-NSXT ######################### 
+
+    function New-vRA-CloudAccount-NSXT
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/22/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Creates new vRA Cloud Account for NSXT endpoint in a particular Org 
+        .DESCRIPTION
+            This cmdlet creates new vRA Cloud Account for NSXT endpoint in a particular Org 
+        .EXAMPLE
+            New-vRA-CloudAccount-NSXT -NSXTHostName "NSXT FQDN" -Credential $Credential -CloudProxyName "Cloud Proxy Name" -CloudAccountName "CloudAccountName" -VCCloudAccountName "VC CloudAccount Name"-UsePolicyAPI "true" -AcceptSelfSignedCertificate "false" 
+            Use Get-Credential to add vCenter Credentials and pass it as Input Parameter $Credential = Get-Credential    
+    #>
+          param (
+          [Parameter (Mandatory=$False)]
+            # vRA Connection object
+            [ValidateNotNullOrEmpty()]
+            [PSCustomObject]$Connection=$defaultvRAConnection,
+          [Parameter (Mandatory=$true)]
+            # NSXT Hostname Name
+            [ValidateNotNullOrEmpty()]
+            [string]$NSXTHostName,
+          [Parameter (Mandatory=$true)]
+            #PSCredential object containing vCenter Authentication Credentials
+            [PSCredential]$Credential,
+          [Parameter (Mandatory=$true)]
+            # vRA Cloudproxy Name
+            [ValidateNotNullOrEmpty()]
+            [string]$CloudProxyName,        
+          [Parameter (Mandatory=$true)]
+            # vRA Cloud Account Name
+            [ValidateNotNullOrEmpty()]
+            [string]$CloudAccountName,
+          [Parameter (Mandatory=$true)]
+            # vCenter Cloud Account Name
+            [ValidateNotNullOrEmpty()]
+            [string]$VCCloudAccountName,            
+          [Parameter (Mandatory=$false)]
+            # Use Policy API Mode 
+            [ValidateNotNullOrEmpty()]
+            [string]$UsePolicyAPI="false",
+          [Parameter (Mandatory=$false)]
+            # Accept SelfSigned Certificate 
+            [ValidateNotNullOrEmpty()]
+            [string]$AcceptSelfsignedCertificate="false"                          
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $vra_uri = "/iaas/api/cloud-accounts"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri
+                $cspauthtoken= $Connection.CSPToken
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $nsxtusername = $Credential.UserName
+                $nsxtpassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password))
+                $cloudproxy = Get-vRA-Datacollectors | where{$_.name -match $CloudProxyName}
+                $dcid = $cloudproxy.dcId
+                $ca = Get-vRA-CloudAccounts | where{$_.name -eq $VCCloudAccountName}
+                $caid = $ca.id
+                $vra_payload = "{
+                  cloudAccountType: nsxt,
+                  privateKeyId: $nsxtusername,
+                  privateKey: $nsxtpassword,
+                  cloudAccountProperties:{
+                    hostName: $nsxthostname,
+                    acceptSelfSignedCertificate: $AcceptSelfsignedCertificate,
+                    dcId: $dcid,
+                    use.policy.api: $UsePolicyAPI
+                  },
+                  name: $cloudaccountname,
+                  description: $nsxthostname,
+                  associatedCloudAccountIds: [ '$caid' ]
+                  }"
+                $vra_body = $vra_payload
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop
+                $response
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    if ($global:DefaultVIServers.Count -gt 0) {Disconnect-VIServer * -Confirm:$false}
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    if ($global:DefaultVIServers.Count -gt 0) {Disconnect-VIServer * -Confirm:$false}
+                    Write-Error "Error Adding vRA Cloud Accounts"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+
+    ######################### New-vRA-Server-CloudAccount-NSXT ######################### 
+
+    function New-vRA-Server-CloudAccount-NSXT
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/22/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Creates new vRA Cloud Account for NSXT endpoint in a particular Org 
+        .DESCRIPTION
+            This cmdlet creates new vRA Cloud Account for NSXT endpoint in a particular Org 
+        .EXAMPLE
+            New-vRA-Server-CloudAccount-NSXT -NSXTHostName "NSXT FQDN" -Credential $Credential -CloudAccountName "CloudAccountName" -VCCloudAccountName "VC CloudAccount Name"-UsePolicyAPI "true" -AcceptSelfSignedCertificate "false" 
+            Use Get-Credential to add vCenter Credentials and pass it as Input Parameter $Credential = Get-Credential    
+    #>
+          param (
+          [Parameter (Mandatory=$False)]
+            # vRA Connection object
+            [ValidateNotNullOrEmpty()]
+            [PSCustomObject]$Connection=$defaultvRAConnection,
+          [Parameter (Mandatory=$true)]
+            # NSXT Hostname Name
+            [ValidateNotNullOrEmpty()]
+            [string]$NSXTHostName,
+          [Parameter (Mandatory=$true)]
+            #PSCredential object containing vCenter Authentication Credentials
+            [PSCredential]$Credential,       
+          [Parameter (Mandatory=$true)]
+            # vRA Cloud Account Name
+            [ValidateNotNullOrEmpty()]
+            [string]$CloudAccountName,
+          [Parameter (Mandatory=$true)]
+            # vCenter Cloud Account Name
+            [ValidateNotNullOrEmpty()]
+            [string]$VCCloudAccountName,            
+          [Parameter (Mandatory=$false)]
+            # Use Policy API Mode 
+            [ValidateNotNullOrEmpty()]
+            [string]$UsePolicyAPI="false",
+          [Parameter (Mandatory=$false)]
+            # Accept SelfSigned Certificate 
+            [ValidateNotNullOrEmpty()]
+            [string]$AcceptSelfsignedCertificate="false"                          
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $vra_uri = "/iaas/api/cloud-accounts"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri
+                $cspauthtoken= $Connection.CSPToken
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $nsxtusername = $Credential.UserName
+                $nsxtpassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password))
+                $ca = Get-vRA-CloudAccounts | where{$_.name -eq $VCCloudAccountName}
+                $caid = $ca.id
+                $vra_payload = "{
+                  cloudAccountType: nsxt,
+                  privateKeyId: $nsxtusername,
+                  privateKey: $nsxtpassword,
+                  cloudAccountProperties:{
+                    hostName: $nsxthostname,
+                    acceptSelfSignedCertificate: $AcceptSelfsignedCertificate,
+                    use.policy.api: $UsePolicyAPI
+                  },
+                  name: $cloudaccountname,
+                  description: $nsxthostname,
+                  associatedCloudAccountIds: [ '$caid' ]
+                  }"
+                $vra_body = $vra_payload
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop
+                $response
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    if ($global:DefaultVIServers.Count -gt 0) {Disconnect-VIServer * -Confirm:$false}
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    if ($global:DefaultVIServers.Count -gt 0) {Disconnect-VIServer * -Confirm:$false}
+                    Write-Error "Error Adding vRA Cloud Accounts"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
 
 
 ######################### Get-vRA-CloudAccounts ######################### 
@@ -1083,6 +1308,7 @@ function Get-vRA-Datacollectors
 
 
 
+
 ######################### New-vRA-FlavorProfiles-vSphere ######################### 
 
 function New-vRA-FlavorProfiles-vSphere
@@ -1297,7 +1523,7 @@ function New-vRA-FlavorProfiles-AWS
     .NOTES
     ==============================================================================================================================================
     Created by:    Munishpal Makhija                                                                                                              
-    Version:       1.0
+    Version:       1.0New
     Date:          06/30/2020
     Organization:  VMware
     Blog:          http://bit.ly/MyvBl0g
@@ -1594,8 +1820,8 @@ function New-vRA-ImageMapping-AWS
     .NOTES
     ==============================================================================================================================================
     Created by:    Munishpal Makhija                                                                                                              
-    Version:       1.0
-    Date:          06/30/2020
+    Version:       1.1
+    Date:          10/06/2020
     Organization:  VMware
     Blog:          http://bit.ly/MyvBl0g
     ==============================================================================================================================================
@@ -1658,7 +1884,7 @@ function New-vRA-ImageMapping-AWS
             $region = Get-vRA-Regions | where{$_.cloudAccountId -match $caid}
             $regionid = $region.id
             $externalid = $region.externalRegionId
-            $image = Get-vRA-FabricImagesFilter -filtertype "name" -filtervalue $AMI | where{$_.externalRegionId -eq $externalid}
+            $image = Get-vRA-FabricImagesFilter -filtertype "externalId" -filtervalue $AMI | where{$_.externalRegionId -eq $externalid}
             $imageid =  $image.id
 
             $vraimage = $vraimagename+ ":"
@@ -1944,6 +2170,7 @@ function New-vRA-NetworkProfile-AWS
               regionId: $regionid
               }" 
             $vra_body = $vra_payload
+            $vra_body
             $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
             $response                   
           } catch {
@@ -3533,8 +3760,8 @@ function New-vRA-Project
     .NOTES
     ==============================================================================================================================================
     Created by:    Munishpal Makhija                                                                                                              
-    Version:       1.0
-    Date:          01/13/2020
+    Version:       1.1
+    Date:          10/06/2020
     Organization:  VMware
     Blog:          http://bit.ly/MyvBl0g
     ==============================================================================================================================================
@@ -3571,6 +3798,14 @@ function New-vRA-Project
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }        
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3579,7 +3814,7 @@ function New-vRA-Project
              "description"=$projectdescription;
             }            
             $vra_body = $vra_payload | Convertto-Json
-            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
             $response                      
           } catch {
             if($_.Exception.Response.StatusCode -eq "Unauthorized") {
@@ -4818,8 +5053,8 @@ function Get-vRA-Deployments
     .NOTES
     ==============================================================================================================================================
     Created by:    Munishpal Makhija                                                                                                              
-    Version:       1.1
-    Date:          04/01/2020
+    Version:       1.3
+    Date:          12/23/2020
     Organization:  VMware
     Blog:          http://bit.ly/MyvBl0g
     ==============================================================================================================================================
@@ -4837,11 +5072,7 @@ function Get-vRA-Deployments
     [Parameter (Mandatory=$False)]
       # vRA Connection object
       [ValidateNotNullOrEmpty()]
-      [PSCustomObject]$Connection=$defaultvRAConnection,
-    [Parameter (Mandatory=$False)]
-      # Response Page Size
-      [ValidateNotNullOrEmpty()]
-      [Int]$Size=200       
+      [PSCustomObject]$Connection=$defaultvRAConnection 
   )
   If (-Not $global:defaultvRAConnection) 
     { 
@@ -4850,25 +5081,36 @@ function Get-vRA-Deployments
   else
     {
       try {
-            $sizeparam = "?size="+ $Size
-            $vra_uri = "/deployment/api/deployments"
-            $url = $Connection.Server
-            $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
-            $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
+            $deployments = Get-vRA-DeploymentFilters -filterId "projects" | Sort-Object Count -Descending
+            $projects = $deployments | select id
+            ForEach ($project in $projects)
             {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
-            $vra_headers = @{"Accept"="application/json";
-            "Content-Type"="application/json";
-            "Authorization"="Bearer $cspauthtoken"; 
-            }
-            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
-            $response.content           
+              $projectid = $project.id
+              $sizeparam = "?Size="+ $Size
+              $vra_uri = "/deployment/api/deployments?size=200&projects="+ $projectid+ "&expand=project%2Cresources"
+              $url = $Connection.Server
+              $vra_url = "https://"+ $url+ $vra_uri
+              $cspauthtoken= $Connection.CSPToken
+              if ($url -ne "api.mgmt.cloud.vmware.com")
+              {
+                $SkipSSLCheck = $True
+              }
+              else
+              {
+                $SkipSSLCheck = $False
+              }            
+              $vra_headers = @{"Accept"="application/json";
+              "Content-Type"="application/json";
+              "Authorization"="Bearer $cspauthtoken"; 
+              }
+              $vra_payload = @()
+              $vra_payload += [pscustomobject]@{
+                  'name'= $deploymentname
+              }     
+              $vra_body = $vra_payload | Convertto-Json            
+              $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+              $response.content
+            }          
           } catch {
             if($_.Exception.Response.StatusCode -eq "Unauthorized") {
                 Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
@@ -4881,6 +5123,76 @@ function Get-vRA-Deployments
             }
     }
 }}
+
+  ######################### Get-vRA-SingleDeployment #########################
+
+  function Get-vRA-SingleDeployment
+  {
+
+  <#
+      .NOTES
+      ==============================================================================================================================================
+      Created by:    Munishpal Makhija                                                                                                              
+      Version:       1.0
+      Date:          12/24/2020
+      Organization:  VMware
+      Blog:          http://bit.ly/MyvBl0g
+      ==============================================================================================================================================
+
+      .SYNOPSIS
+          Returns single vRA Deployment in a particular Org 
+      .DESCRIPTION
+          This cmdlet retrieves single vRA Deploymentin a particular Org 
+      .EXAMPLE
+          Get-vRA-SingleDeployment -DeploymentName "DeploymentName"      
+  #>
+      param (
+      [Parameter (Mandatory=$False)]
+        # vRA Connection object
+        [ValidateNotNullOrEmpty()]
+        [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$DeploymentName     
+    )
+    If (-Not $global:defaultvRAConnection) 
+      { 
+        Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+      } 
+    else
+      {
+        try {
+              $vra_uri = "/deployment/api/deployments?name="+ $DeploymentName+ "&expand=project%2Cresources"
+              $url = $Connection.Server
+              $vra_url = "https://"+ $url+ $vra_uri
+              $cspauthtoken= $Connection.CSPToken
+              if ($url -ne "api.mgmt.cloud.vmware.com")
+              {
+                $SkipSSLCheck = $True
+              }
+              else
+              {
+                $SkipSSLCheck = $False
+              }            
+              $vra_headers = @{"Accept"="application/json";
+              "Content-Type"="application/json";
+              "Authorization"="Bearer $cspauthtoken"; 
+              }
+              $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+              $response.content          
+            } catch {
+              if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                  Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                  break
+              } 
+              else {
+                  Write-Error "Error in retrieving vRA Deployments"
+                  Write-Error "`n($_.Exception.Message)`n"
+                  break
+              }
+      }
+  }}
 
 
 ######################### Get-vRA-DeploymentFilters #########################
@@ -5066,7 +5378,7 @@ function Remove-vRA-Deployment
   else
     {
       try {
-            $deployment = Get-vRA-Deployments | where{$_.name -match $DeploymentName} | Select id
+            $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
             $deploymentid = $deployment.id      
             $vra_uri = "/deployment/api/deployments/"
             $url = $Connection.Server
@@ -5146,7 +5458,7 @@ function Get-vRA-DeploymentResources
   else
     {
       try {
-            $deployment = Get-vRA-Deployments | where{$_.name -match $DeploymentName}
+            $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
             $depId  = $deployment.id
             $vra_uri = "/deployment/api/deployments/"+ $depId+ "/resources"
             $url = $Connection.Server
@@ -5218,7 +5530,7 @@ function Get-vRA-DeploymentActions
   else
     {
       try {
-            $deployment = Get-vRA-Deployments | where{$_.name -match $DeploymentName}
+            $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
             $depId  = $deployment.id
             $vra_uri = "/deployment/api/deployments/"+ $depId+ "/actions"
             $url = $Connection.Server
@@ -5251,4 +5563,1325 @@ function Get-vRA-DeploymentActions
     }
 }}
 
+  ######################### Get-vRA-DeploymentActionID #########################
 
+  function Get-vRA-DeploymentActionID
+  {
+
+  <#
+      .NOTES
+      ==============================================================================================================================================
+      Created by:    Munishpal Makhija                                                                                                              
+      Version:       1.0
+      Date:          12/23/2020
+      Organization:  VMware
+      Blog:          http://bit.ly/MyvBl0g
+      ==============================================================================================================================================
+
+      .SYNOPSIS
+          Returns vRA Deployment Actions in a particular Org 
+      .DESCRIPTION
+          This cmdlet retrieves vRA Deployment Actions in a particular Org 
+      .EXAMPLE
+          Get-vRA-DeploymentActionID -DeploymentName "DeploymentName" -ActionID "Deployment.ChangeLease"
+      .EXAMPLE
+          Get-vRA-DeploymentActionID | where{$_.name -eq "DeploymentName"}        
+  #>
+      param (
+      [Parameter (Mandatory=$False)]
+        # vRA Connection object
+        [ValidateNotNullOrEmpty()]
+        [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$DeploymentName,
+      [Parameter (Mandatory=$True)]
+        # Deployment Action ID
+        [ValidateNotNullOrEmpty()]
+        [String]$ActionID,              
+      [Parameter (Mandatory=$False)]
+        # Response Page Size
+        [ValidateNotNullOrEmpty()]
+        [Int]$Size=200       
+    )
+    If (-Not $global:defaultvRAConnection) 
+      { 
+        Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+      } 
+    else
+      {
+        try {
+              $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+              $deploymentid = $deployment.id
+              $sizeparam = "?size="+ $Size
+              $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/actions/"+ $ActionID
+              $url = $Connection.Server
+              $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
+              $cspauthtoken= $Connection.CSPToken
+              if ($url -ne "api.mgmt.cloud.vmware.com")
+              {
+                $SkipSSLCheck = $True
+              }
+              else
+              {
+                $SkipSSLCheck = $False
+              }            
+              $vra_headers = @{"Accept"="application/json";
+              "Content-Type"="application/json";
+              "Authorization"="Bearer $cspauthtoken"; 
+              }
+              $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+              $response          
+            } catch {
+              if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                  Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                  break
+              } 
+              else {
+                  Write-Error "Error in retrieving vRA Deployments"
+                  Write-Error "`n($_.Exception.Message)`n"
+                  break
+              }
+      }
+  }}
+
+  ######################### Get-vRA-DeploymentResourceActionID #########################
+
+  function Get-vRA-DeploymentResourceActionID
+  {
+
+  <#
+      .NOTES
+      ==============================================================================================================================================
+      Created by:    Munishpal Makhija                                                                                                              
+      Version:       1.0
+      Date:          12/23/2020
+      Organization:  VMware
+      Blog:          http://bit.ly/MyvBl0g
+      ==============================================================================================================================================
+
+      .SYNOPSIS
+          Returns vRA Deployment Actions in a particular Org 
+      .DESCRIPTION
+          This cmdlet retrieves vRA Deployment Actions in a particular Org 
+      .EXAMPLE
+          Get-vRA-DeploymentResourceActionID -DeploymentName "MMTest01" -ResourceName "ResourceName" -ActionID "Cloud.vSphere.Machine.Snapshot.Delete"     
+  #>
+      param (
+      [Parameter (Mandatory=$False)]
+        # vRA Connection object
+        [ValidateNotNullOrEmpty()]
+        [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$DeploymentName,
+      [Parameter (Mandatory=$True)]
+        # Deployment Resource Name
+        [ValidateNotNullOrEmpty()]
+        [String]$ResourceName,        
+      [Parameter (Mandatory=$True)]
+        # Deployment Action ID
+        [ValidateNotNullOrEmpty()]
+        [String]$ActionID      
+    )
+    If (-Not $global:defaultvRAConnection) 
+      { 
+        Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+      } 
+    else
+      {
+        try {
+              $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+              $deploymentid = $deployment.id
+              $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+              $resourceid = $resource.id
+              $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/actions/"+ $ActionID
+              $url = $Connection.Server
+              $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
+              $cspauthtoken= $Connection.CSPToken
+              if ($url -ne "api.mgmt.cloud.vmware.com")
+              {
+                $SkipSSLCheck = $True
+              }
+              else
+              {
+                $SkipSSLCheck = $False
+              }            
+              $vra_headers = @{"Accept"="application/json";
+              "Content-Type"="application/json";
+              "Authorization"="Bearer $cspauthtoken"; 
+              }
+              $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+              $response          
+            } catch {
+              if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                  Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                  break
+              } 
+              else {
+                  Write-Error "Error in retrieving vRA Deployments"
+                  Write-Error "`n($_.Exception.Message)`n"
+                  break
+              }
+      }
+  }}
+
+######################### Get-vRA-DeploymentResourceActions #########################
+
+function Get-vRA-DeploymentResourceActions
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          12/23/2020
+    Organization:  VMware
+    Blog:          http://bit.ly/MyvBl0g
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns vRA Deployment Resource Actions in a particular Org 
+    .DESCRIPTION
+        This cmdlet retrieves vRA Deployment Resource Actions in a particular Org 
+    .EXAMPLE
+        Get-vRA-DeploymentResourceActions -DeploymentName "DeploymentName" -ResourceName "ResourceName"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+    [Parameter (Mandatory=$True)]
+      # Deployment Name
+      [ValidateNotNullOrEmpty()]
+      [String]$DeploymentName,
+    [Parameter (Mandatory=$True)]
+      # Deployment Resource   Name
+      [ValidateNotNullOrEmpty()]
+      [String]$ResourceName           
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+      try {
+            $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+            $deploymentid = $deployment.id
+            $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+            $resourceid = $resource.id
+            $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/actions"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            if ($url -ne "api.mgmt.cloud.vmware.com")
+            {
+              $SkipSSLCheck = $True
+            }
+            else
+            {
+              $SkipSSLCheck = $False
+            }            
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+            $response          
+          } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+    ######################### Change-vRA-DeploymentLease #########################
+
+    function Change-vRA-DeploymentLease
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/23/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Modifies vRA Deployment Lease in a particular Org 
+        .DESCRIPTION
+            This cmdlet modifies vRA Deployment lease in a particular Org 
+        .EXAMPLE
+            Change-vRA-DeploymentLease -DeploymentName "DeploymentName" -LeaseExpiryDate "2021-01-06T19:13:00.000Z"      
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Lease Expiry Date (yyyy-mm-dd-Thh:mm:zz)
+          [ValidateNotNullOrEmpty()]
+          [String]$LeaseExpiryDate      
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Deployment.ChangeLease"
+                $inputs = @{"Lease Expiration Date"=$LeaseExpiryDate}
+                $vra_payload = @{"actionId"=$action;
+                  "inputs"=$inputs;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+
+######################### Change-vRA-DeploymentOwner #########################
+
+    function Change-vRA-DeploymentOwner
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/24/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Modifies vRA Deployment Owner in a particular Org 
+        .DESCRIPTION
+            This cmdlet modifies vRA Deployment owner in a particular Org 
+        .EXAMPLE
+            Change-vRA-DeploymentOwner -DeploymentName "DeploymentName" -OwnerEmail "abc@abc.com"      
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Owner Email Address
+          [ValidateNotNullOrEmpty()]
+          [String]$OwnerEmail      
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Deployment.ChangeOwner"
+                $inputs = @{"New Owner"=$OwnerEmail}
+                $vra_payload = @{"actionId"=$action;
+                  "inputs"=$inputs;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+
+    ######################### Create-vRA-DeploymentResourceSnapshot #########################
+
+    function Create-vRA-DeploymentResourceSnapshot
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/23/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Creates Snapshot for vRA Deployment Resource (vSphere Virtual Machine) in a particular Org 
+        .DESCRIPTION
+            This cmdlet creates Snapshot for vRA Deployment Resource (vSphere Virtual Machine) in a particular Org 
+        .EXAMPLE
+            Create-vRA-DeploymentResourceSnapshot -DeploymentName "DeploymentName" -ResourceName "ResourceName" -SnapshotName "SnapshotName"      
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Deployment Resource   Name
+          [ValidateNotNullOrEmpty()]
+          [String]$ResourceName,           
+        [Parameter (Mandatory=$True)]
+          # Lease Expiry Date (yyyy-mm-dd-Thh:mm:zz)
+          [ValidateNotNullOrEmpty()]
+          [String]$SnapshotName,
+        [Parameter (Mandatory=$False)]
+          # Lease Expiry Date (yyyy-mm-dd-Thh:mm:zz)
+          [ValidateNotNullOrEmpty()]
+          [String]$MemorySnapshot="false"               
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+                $resourceid = $resource.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Cloud.vSphere.Machine.Snapshot.Create"
+                $inputs = @{"name"=$SnapshotName;"memorySnapshot"=$MemorySnapshot}
+                $vra_payload = @{"actionId"=$action;
+                  "inputs"=$inputs;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+    ######################### Delete-vRA-DeploymentResourceSnapshot #########################
+
+    function Delete-vRA-DeploymentResourceSnapshot
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/23/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Removes Snapshot for vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .DESCRIPTION
+            This cmdlet removes Snapshot for vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .EXAMPLE
+            Delete-vRA-DeploymentResourceSnapshot -DeploymentName "DeploymentName" -ResourceName "ResourceName" -SnapshotName "SnapshotName"      
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Deployment Resource   Name
+          [ValidateNotNullOrEmpty()]
+          [String]$ResourceName,           
+        [Parameter (Mandatory=$True)]
+          # Lease Expiry Date (yyyy-mm-dd-Thh:mm:zz)
+          [ValidateNotNullOrEmpty()]
+          [String]$SnapshotName              
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+                $resourceid = $resource.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Cloud.vSphere.Machine.Snapshot.Delete"
+                $snap = Get-vRA-DeploymentResourceActionID -DeploymentName $DeploymentName -ResourceName $ResourceName -ActionID "Cloud.vSphere.Machine.Snapshot.Delete"
+                $snapshot = $snap.schema.properties.SnapshotId.oneOf | where {$_.title -match $SnapshotName}
+                $snapshotId = $snapshot.const 
+                $inputs = @{"snapshotId"=$snapshotId}
+                $vra_payload = @{"actionId"=$action;
+                  "inputs"=$inputs;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+    ######################### Revert-vRA-DeploymentResourceSnapshot #########################
+
+    function Revert-vRA-DeploymentResourceSnapshot
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/23/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Revert to a Snapshot for vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .DESCRIPTION
+            This cmdlet reverts to a Snapshot for vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .EXAMPLE
+            Revert-vRA-DeploymentResourceSnapshot -DeploymentName "DeploymentName" -ResourceName "ResourceName" -SnapshotName "SnapshotName"      
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Deployment Resource   Name
+          [ValidateNotNullOrEmpty()]
+          [String]$ResourceName,           
+        [Parameter (Mandatory=$True)]
+          # Lease Expiry Date (yyyy-mm-dd-Thh:mm:zz)
+          [ValidateNotNullOrEmpty()]
+          [String]$SnapshotName              
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+                $resourceid = $resource.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Cloud.vSphere.Machine.Snapshot.Revert"
+                $snap = Get-vRA-DeploymentResourceActionID -DeploymentName $DeploymentName -ResourceName $ResourceName -ActionID "Cloud.vSphere.Machine.Snapshot.Revert"
+                $snapshot = $snap.schema.properties.SnapshotId.oneOf | where {$_.title -match $SnapshotName}
+                $snapshotId = $snapshot.const 
+                $inputs = @{"snapshotId"=$snapshotId}
+                $vra_payload = @{"actionId"=$action;
+                  "inputs"=$inputs;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+    ######################### PowerON-vRA-DeploymentResource #########################
+
+    function PowerON-vRA-DeploymentResource
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/23/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Power ON vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .DESCRIPTION
+            This cmdlet powers on a vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .EXAMPLE
+            PowerON-vRA-DeploymentResource -DeploymentName "DeploymentName" -ResourceName "ResourceName"     
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Deployment Resource   Name
+          [ValidateNotNullOrEmpty()]
+          [String]$ResourceName            
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+                $resourceid = $resource.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Cloud.vSphere.Machine.PowerOn"
+                $vra_payload = @{"actionId"=$action;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+    ######################### PowerOff-vRA-DeploymentResource #########################
+
+    function PowerOff-vRA-DeploymentResource
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/23/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Power Off vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .DESCRIPTION
+            This cmdlet powers off a vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .EXAMPLE
+            PowerOff-vRA-DeploymentResource -DeploymentName "DeploymentName" -ResourceName "ResourceName"     
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Deployment Resource   Name
+          [ValidateNotNullOrEmpty()]
+          [String]$ResourceName            
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+                $resourceid = $resource.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Cloud.vSphere.Machine.PowerOff"
+                $vra_payload = @{"actionId"=$action;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+    ######################### Reboot-vRA-DeploymentResource #########################
+
+    function Reboot-vRA-DeploymentResource
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/23/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Rebboot vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .DESCRIPTION
+            This cmdlet reboots a vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .EXAMPLE
+            Reboot-vRA-DeploymentResource -DeploymentName "DeploymentName" -ResourceName "ResourceName"     
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Deployment Resource   Name
+          [ValidateNotNullOrEmpty()]
+          [String]$ResourceName            
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+                $resourceid = $resource.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Cloud.vSphere.Machine.Reboot"
+                $vra_payload = @{"actionId"=$action;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+    ######################### Reset-vRA-DeploymentResource #########################
+
+    function Reset-vRA-DeploymentResource
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/23/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Reset vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .DESCRIPTION
+            This cmdlet reset a vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .EXAMPLE
+            Reset-vRA-DeploymentResource -DeploymentName "DeploymentName" -ResourceName "ResourceName"     
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Deployment Resource   Name
+          [ValidateNotNullOrEmpty()]
+          [String]$ResourceName            
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+                $resourceid = $resource.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Cloud.vSphere.Machine.Reset"
+                $vra_payload = @{"actionId"=$action;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+
+    ######################### Suspend-vRA-DeploymentResource #########################
+
+    function Suspend-vRA-DeploymentResource
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/24/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Suspend vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .DESCRIPTION
+            This cmdlet suspend a vRA Deployment Resource (vSphere Virtual Machine) in a particular Org  
+        .EXAMPLE
+            Suspend-vRA-DeploymentResource -DeploymentName "DeploymentName" -ResourceName "ResourceName"     
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Deployment Resource   Name
+          [ValidateNotNullOrEmpty()]
+          [String]$ResourceName            
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $resource = Get-vRA-DeploymentResources -DeploymentName $DeploymentName | where {$_.name -eq $ResourceName}
+                $resourceid = $resource.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/resources/"+ $resourceid+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Cloud.vSphere.Machine.Suspend"
+                $vra_payload = @{"actionId"=$action;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+
+######################### PowerON-vRA-Deployment #########################
+
+    function PowerON-vRA-Deployment
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/24/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Power ON vRA Deployment in a particular Org 
+        .DESCRIPTION
+            This cmdlet powers ON  vRA Deployment in a particular Org 
+        .EXAMPLE
+            PowerON-vRA-Deployment -DeploymentName "DeploymentName"      
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName     
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Deployment.PowerOn"
+                $vra_payload = @{"actionId"=$action;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+######################### PowerOff-vRA-Deployment #########################
+
+    function PowerOff-vRA-Deployment
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/24/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Power Off vRA Deployment in a particular Org 
+        .DESCRIPTION
+            This cmdlet powers Off  vRA Deployment in a particular Org 
+        .EXAMPLE
+            PowerOff-vRA-Deployment -DeploymentName "DeploymentName"      
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName     
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/requests"
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $action = "Deployment.PowerOff"
+                $vra_payload = @{"actionId"=$action;
+                }
+                $vra_body = $vra_payload | Convertto-Json
+                $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers -Body $vra_body  -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
+
+######################### Get-vRA-DeploymentRequests #########################
+
+    function Get-vRA-DeploymentRequests
+    {
+
+    <#
+        .NOTES
+        ==============================================================================================================================================
+        Created by:    Munishpal Makhija                                                                                                              
+        Version:       1.0
+        Date:          12/29/2020
+        Organization:  VMware
+        Blog:          http://bit.ly/MyvBl0g
+        ==============================================================================================================================================
+
+        .SYNOPSIS
+            Get vRA Deployment Requests in a particular Org 
+        .DESCRIPTION
+            This cmdlet gets vRA Deployment Requests in a particular Org 
+        .EXAMPLE
+            Get-vRA-DeploymentRequests -DeploymentName "DeploymentName" -RequestID "Request ID"   
+    #>
+        param (
+        [Parameter (Mandatory=$False)]
+          # vRA Connection object
+          [ValidateNotNullOrEmpty()]
+          [PSCustomObject]$Connection=$defaultvRAConnection,
+        [Parameter (Mandatory=$True)]
+          # Deployment Name
+          [ValidateNotNullOrEmpty()]
+          [String]$DeploymentName,
+        [Parameter (Mandatory=$True)]
+          # Deployment Request ID
+          [ValidateNotNullOrEmpty()]
+          [String]$RequestID               
+      )
+      If (-Not $global:defaultvRAConnection) 
+        { 
+          Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+        } 
+      else
+        {
+          try {
+                $deployment = Get-vRA-SingleDeployment -DeploymentName $DeploymentName
+                $deploymentid = $deployment.id
+                $vra_uri = "/deployment/api/deployments/"+ $deployment.id+ "/requests/"+ $RequestID
+                $url = $Connection.Server
+                $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
+                $cspauthtoken= $Connection.CSPToken
+                if ($url -ne "api.mgmt.cloud.vmware.com")
+                {
+                  $SkipSSLCheck = $True
+                }
+                else
+                {
+                  $SkipSSLCheck = $False
+                }            
+                $vra_headers = @{"Accept"="application/json";
+                "Content-Type"="application/json";
+                "Authorization"="Bearer $cspauthtoken"; 
+                }
+                $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck 
+                $response          
+              } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                    break
+                } 
+                else {
+                    Write-Error "Error in retrieving vRA Deployments"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+        }
+    }}
