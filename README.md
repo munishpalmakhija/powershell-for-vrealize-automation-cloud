@@ -12,6 +12,15 @@ You need to have following pre-requisties
 1.	vRealize Automation Cloud API Token 
 2.	PowerShellVersion = '6.0'
 
+# Supported Environments
+
+PowervRACloud supports following environments
+
+| Environment | Supported |
+| --- | --- |
+|8.x| :white_check_mark: |
+|vRA-Cloud | :white_check_mark: |
+
 # Manual Download
 
 It is a simple two-file module stored under module directory. 
@@ -33,6 +42,10 @@ Quick Examples on how to get started
 | Connect-vRA-Cloud -APIToken "APIToken" |
 
 | Example-2  |
+| ------------- |
+| Connect-vRA-Server -Server $vraserver -Credential $vracredentials |
+
+| Example-3  |
 | ------------- |
 | Get-vRA-CloudAccounts|
 
