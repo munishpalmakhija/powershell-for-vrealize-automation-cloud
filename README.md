@@ -1,7 +1,7 @@
 # Powershell for vRealize-Automation-Cloud
 
 
-Powershell for vRealize-Automation-Cloud is a PowerShell module that abstracts the VMware vRealize Automation Cloud APIs to a set of easily used PowerShell functions. This tool provides a comprehensive command line environment for managing your VMware vRealize Automation Cloud environment. It is a.k.a PowervRACloud
+Powershell for vRealize-Automation-Cloud is a PowerShell module that abstracts the VMware vRealize Automation Cloud APIs to a set of easily used PowerShell functions. This tool provides a comprehensive command line environment for managing your VMware vRealize Automation Cloud and vRealize Automation 8.x environments. It is a.k.a PowervRACloud
 
 This module is not supported by VMware, and comes with no warranties expressed or implied. Please test and validate its functionality before using this product in a production environment.
 
@@ -21,9 +21,16 @@ PowervRACloud supports following environments
 |8.x| :white_check_mark: |
 |vRA-Cloud | :white_check_mark: |
 
+# Install from PowerShell Gallery
+
+You can install directly from Powershell Gallery by executing following command  
+
+| Install-Module -Name PowervRACloud  |
+| ------------- |
+
 # Manual Download
 
-It is a simple two-file module stored under module directory. 
+If you want to perform manual download in case you dont have access Powershell directly. It is a simple two-file module stored under module directory. 
 
 1.	PowervRACloud.psd1
 2.	PowervRACloud.psm1
