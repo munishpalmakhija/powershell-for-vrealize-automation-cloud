@@ -52,7 +52,7 @@ Quick Examples on how to get started
 
 # Documentation
 
-You can download the <a href="https://github.com/munishpalmakhija/powershell-for-vrealize-automation-cloud/blob/master/doc/PowervRACloudDocumentation.html">documentation</a> file which has instructions for every command
+You can refer the <a href="https://powervracloud.github.io/PowervRACloudDocumentation.html">documentation</a> file which has instructions for every command
 
 # Contribution
 
