@@ -2,10 +2,10 @@
 
 #    ===========================================================================
 #    Created by:    Munishpal Makhija
-#    Release Date:  04/15/2020
+#    Release Date:  06/02/2021
 #    Organization:  VMware
-#    Version:       1.2
-#    Blog:          http://bit.ly/MyvBl0g
+#    Version:       1.5
+#    Blog:          https://munishpalmakhija.com
 #    Twitter:       @munishpal_singh
 #    ===========================================================================
 
@@ -20,7 +20,7 @@ function Get-vRACloudCommands {
     Version:       1.0
     Date:          01/13/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -46,10 +46,10 @@ function Connect-vRA-Cloud
     .NOTES
     ==============================================================================================================================================
     Created by:    Munishpal Makhija                                                                                                              
-    Version:       1.1
-    Date:          06/29/2020
+    Version:       1.2
+    Date:          06/03/2021
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -64,7 +64,11 @@ function Connect-vRA-Cloud
     [Parameter (Mandatory=$true)]
       # vRA Cloud API Token
       [ValidateNotNullOrEmpty()]
-      [Security.SecureString]$APIToken
+      [Security.SecureString]$APIToken,
+      [Parameter (Mandatory=$False)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$Region="us"      
   )  
   if (($PSVersionTable.PSVersion.Major -eq 6)) {
      $API = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($APIToken)) 
@@ -82,10 +86,18 @@ $response = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $bo
   if($response)
   {
     #$response = ($response | ConvertFrom-Json)
-
+    if ($Region -eq "us")
+    {
+      $apiurl = "api.mgmt.cloud.vmware.com"
+    }
+    else
+    {
+        $apiurl = $Region + ".api.mgmt.cloud.vmware.com"
+    } 
     # Setup a custom object to contain the parameters of the connection, including the URL to the CSP API & Access token
     $connection = [pscustomObject] @{
-      "Server" = "api.mgmt.cloud.vmware.com"
+      "Server" = $apiurl
+      "SkipSSLCheck" = $False
       "CSPToken" = $response.access_token
     }
 
@@ -105,10 +117,10 @@ function Connect-vRA-Server
     .NOTES
     ==============================================================================================================================================
     Created by:    Munishpal Makhija                                                                                                              
-    Version:       1.1
-    Date:          10/06/2020
+    Version:       1.2
+    Date:          06/03/2021
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -145,14 +157,22 @@ $payload = @{"username"=$username;
 "password"=$password;}
 $body= $payload | Convertto-Json
 $response = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body -SkipCertificateCheck -ErrorAction:Stop
-  if($response)
+if($response)
   {
     #$response = ($response | ConvertFrom-Json)
-
-    # Setup a custom object to contain the parameters of the connection, including the URL to the CSP API & Access token
+    $token = $response.refresh_token
+    $rpayload = @{"refreshToken"=$token;}
+    $rbody= $rpayload | Convertto-Json
+    $ruri = "/iaas/api/login"
+    $rurl = "https://"+ $Server+ $ruri    
+    $r = Invoke-RestMethod -Uri $rurl -Method Post -Headers $headers -Body $rbody -SkipCertificateCheck -ErrorAction:Stop
+    # Setup a custom object to contain the parameters of the connection, including the URL to the CSP API & Access token  
     $connection = [pscustomObject] @{
+      
       "Server" = $Server
-      "CSPToken" = $response.access_token
+      "SkipSSLCheck" = $True
+      "CSPToken" = $r.token
+      
     }
 
     # Remember this as the default connection
@@ -162,7 +182,6 @@ $response = Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $bo
     $connection
   }
 }
- 
 ####################### Disconnect-vRA-Cloud ######################### 
 
 function Disconnect-vRA-Cloud
@@ -174,7 +193,7 @@ function Disconnect-vRA-Cloud
     Version:       1.0
     Date:          01/13/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -203,7 +222,7 @@ function New-vRA-CloudAccount-vSphere
     Version:       1.0
     Date:          01/13/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -309,7 +328,7 @@ function New-vRA-Server-CloudAccount-vSphere
     Version:       1.0
     Date:          04/03/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -352,14 +371,7 @@ function New-vRA-Server-CloudAccount-vSphere
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -416,7 +428,7 @@ function New-vRA-CloudAccount-VMC
     Version:       1.1
     Date:          02/22/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -536,7 +548,7 @@ function New-vRA-Server-CloudAccount-VMC
     Version:       1.0
     Date:          04/03/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -588,14 +600,7 @@ function New-vRA-Server-CloudAccount-VMC
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -657,7 +662,7 @@ function New-vRA-CloudAccount-AWS
     Version:       1.1
     Date:          07/15/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -706,14 +711,7 @@ function New-vRA-CloudAccount-AWS
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }             
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck            
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -759,7 +757,7 @@ function New-vRA-CloudAccount-AWS
         Version:       1.0
         Date:          12/22/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -869,7 +867,7 @@ function New-vRA-CloudAccount-AWS
         Version:       1.0
         Date:          12/22/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -972,7 +970,7 @@ function Get-vRA-CloudAccounts
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1001,14 +999,7 @@ function Get-vRA-CloudAccounts
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }             
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck            
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1041,7 +1032,7 @@ function Get-vRA-Machines
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1075,14 +1066,7 @@ function Get-vRA-Machines
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1114,7 +1098,7 @@ function Get-vRA-MachineSnapshots
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1147,14 +1131,7 @@ function Get-vRA-MachineSnapshots
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1188,7 +1165,7 @@ function Get-vRA-Regions
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1217,14 +1194,7 @@ function Get-vRA-Regions
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1258,7 +1228,7 @@ function Get-vRA-Datacollectors
     Version:       1.0
     Date:          01/13/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1321,7 +1291,7 @@ function New-vRA-FlavorProfiles-vSphere
     Version:       1.2
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1368,14 +1338,7 @@ function New-vRA-FlavorProfiles-vSphere
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1424,7 +1387,7 @@ function New-vRA-FlavorProfiles-VMC
     Version:       1.0
     Date:          06/30/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1471,14 +1434,7 @@ function New-vRA-FlavorProfiles-VMC
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1526,7 +1482,7 @@ function New-vRA-FlavorProfiles-AWS
     Version:       1.0New
     Date:          06/30/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1569,14 +1525,7 @@ function New-vRA-FlavorProfiles-AWS
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1624,7 +1573,7 @@ function New-vRA-ImageMapping
     Version:       1.2
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1667,14 +1616,7 @@ function New-vRA-ImageMapping
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1724,7 +1666,7 @@ function New-vRA-ImageMapping-VMC
     Version:       1.0
     Date:          06/30/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1767,14 +1709,7 @@ function New-vRA-ImageMapping-VMC
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1823,7 +1758,7 @@ function New-vRA-ImageMapping-AWS
     Version:       1.1
     Date:          10/06/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1866,14 +1801,7 @@ function New-vRA-ImageMapping-AWS
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -1924,7 +1852,7 @@ function New-vRA-NetworkProfile
     Version:       1.2
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -1963,14 +1891,7 @@ function New-vRA-NetworkProfile
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2015,7 +1936,7 @@ function New-vRA-NetworkProfile-VMC
     Version:       1.0
     Date:          06/30/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2054,14 +1975,7 @@ function New-vRA-NetworkProfile-VMC
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2106,7 +2020,7 @@ function New-vRA-NetworkProfile-AWS
     Version:       1.0
     Date:          07/07/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2145,14 +2059,7 @@ function New-vRA-NetworkProfile-AWS
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2198,7 +2105,7 @@ function New-vRA-vSphereStorageProfile
     Version:       1.2
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2237,14 +2144,7 @@ function New-vRA-vSphereStorageProfile
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2296,7 +2196,7 @@ function New-vRA-vSphereStorageProfile-VMC
     Version:       1.0
     Date:          06/30/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2335,14 +2235,7 @@ function New-vRA-vSphereStorageProfile-VMC
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2391,7 +2284,7 @@ function New-vRA-StorageProfile-AWS
     Version:       1.0
     Date:          07/07/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2434,14 +2327,7 @@ function New-vRA-StorageProfile-AWS
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2490,7 +2376,7 @@ function Get-vRA-FlavorProfiles
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2519,14 +2405,7 @@ function Get-vRA-FlavorProfiles
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2560,7 +2439,7 @@ function Get-vRA-Flavors
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2589,14 +2468,7 @@ function Get-vRA-Flavors
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2629,7 +2501,7 @@ function Get-vRA-ImageProfiles
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2658,14 +2530,7 @@ function Get-vRA-ImageProfiles
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2698,7 +2563,7 @@ function Get-vRA-FabricImages
     Version:       1.2
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2732,14 +2597,7 @@ function Get-vRA-FabricImages
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam 
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2771,7 +2629,7 @@ function Get-vRA-FabricImagesFilter
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2810,14 +2668,7 @@ function Get-vRA-FabricImagesFilter
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $filterparam
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2850,7 +2701,7 @@ function Get-vRA-FabricNetworks
     Version:       1.2
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2882,14 +2733,7 @@ function Get-vRA-FabricNetworks
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam 
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -2921,7 +2765,7 @@ function Get-vRA-FabricNetworksFilter
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -2960,14 +2804,7 @@ function Get-vRA-FabricNetworksFilter
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $filterparam 
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3001,7 +2838,7 @@ function Get-vRA-FabricvSphereDatastores
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3030,14 +2867,7 @@ function Get-vRA-FabricvSphereDatastores
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3071,7 +2901,7 @@ function Get-vRA-FabricvSphereDatastoresFilter
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3110,14 +2940,7 @@ function Get-vRA-FabricvSphereDatastoresFilter
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $filterparam
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3149,7 +2972,7 @@ function Get-vRA-FabricFlavors
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3178,14 +3001,7 @@ function Get-vRA-FabricFlavors
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3217,7 +3033,7 @@ function Get-vRA-FabricvSphereStoragePolicies
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3246,14 +3062,7 @@ function Get-vRA-FabricvSphereStoragePolicies
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3285,7 +3094,7 @@ function Get-vRA-Images
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3314,14 +3123,7 @@ function Get-vRA-Images
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3353,7 +3155,7 @@ function Get-vRA-Networks
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3382,14 +3184,7 @@ function Get-vRA-Networks
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3421,7 +3216,7 @@ function Get-vRA-NetworkDomains
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3450,14 +3245,7 @@ function Get-vRA-NetworkDomains
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3489,7 +3277,7 @@ function Get-vRA-SecurityGroups
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3518,14 +3306,7 @@ function Get-vRA-SecurityGroups
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3558,7 +3339,7 @@ function Get-vRA-NetworkProfiles
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3587,14 +3368,7 @@ function Get-vRA-NetworkProfiles
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3626,7 +3400,7 @@ function Get-vRA-StorageProfiles
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3655,14 +3429,7 @@ function Get-vRA-StorageProfiles
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3694,7 +3461,7 @@ function Get-vRA-Projects
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3723,14 +3490,7 @@ function Get-vRA-Projects
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3763,7 +3523,7 @@ function New-vRA-Project
     Version:       1.1
     Date:          10/06/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3798,14 +3558,7 @@ function New-vRA-Project
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }        
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck       
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3843,7 +3596,7 @@ function New-vRA-Project-With-Zone
     Version:       1.2
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3878,14 +3631,7 @@ function New-vRA-Project-With-Zone
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -3931,7 +3677,7 @@ function Update-vRA-Project-ZoneConfig
     Version:       1.1
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -3977,14 +3723,7 @@ function Update-vRA-Project-ZoneConfig
     {
       try {
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4037,7 +3776,7 @@ function Add-vRA-Project-Member
     Version:       1.1
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4069,14 +3808,7 @@ function Add-vRA-Project-Member
     {
       try {
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4122,7 +3854,7 @@ function Add-vRA-Project-Administrator
     Version:       1.1
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4154,14 +3886,7 @@ function Add-vRA-Project-Administrator
     {
       try {
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4206,7 +3931,7 @@ function Remove-vRA-Project-Member
     Version:       1.1
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4238,14 +3963,7 @@ function Remove-vRA-Project-Member
     {
       try {
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4293,7 +4011,7 @@ function Remove-vRA-Project-Administrator
     Version:       1.1
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4325,14 +4043,7 @@ function Remove-vRA-Project-Administrator
     {
       try {
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }             
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck            
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4377,7 +4088,7 @@ function Get-vRA-CloudZones
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4406,14 +4117,7 @@ function Get-vRA-CloudZones
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4445,7 +4149,7 @@ function Get-vRA-Requests
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4474,14 +4178,7 @@ function Get-vRA-Requests
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4513,7 +4210,7 @@ function Get-vRA-Tags
     Version:       1.2
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4545,14 +4242,7 @@ function Get-vRA-Tags
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam 
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4584,7 +4274,7 @@ function New-vRA-Blueprint
     Version:       1.1
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4627,14 +4317,7 @@ function New-vRA-Blueprint
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4677,7 +4360,7 @@ function Get-vRA-Blueprints
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4711,14 +4394,7 @@ function Get-vRA-Blueprints
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4751,7 +4427,7 @@ function Get-vRA-BlueprintDetails
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4784,14 +4460,7 @@ function Get-vRA-BlueprintDetails
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4824,7 +4493,7 @@ function Get-vRA-BlueprintInputSchema
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4857,14 +4526,7 @@ function Get-vRA-BlueprintInputSchema
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }              
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck             
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4896,7 +4558,7 @@ function Get-vRA-BlueprintVersions
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -4929,14 +4591,7 @@ function Get-vRA-BlueprintVersions
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }             
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck            
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -4969,7 +4624,7 @@ function Deploy-vRA-Blueprint
     Version:       1.1
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -5004,14 +4659,7 @@ function Deploy-vRA-Blueprint
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -5056,7 +4704,7 @@ function Get-vRA-Deployments
     Version:       1.3
     Date:          12/23/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -5136,7 +4784,7 @@ function Get-vRA-Deployments
       Version:       1.0
       Date:          12/24/2020
       Organization:  VMware
-      Blog:          http://bit.ly/MyvBl0g
+      Blog:          https://munishpalmakhija.com
       ==============================================================================================================================================
 
       .SYNOPSIS
@@ -5207,7 +4855,7 @@ function Get-vRA-DeploymentFilters
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -5245,14 +4893,7 @@ function Get-vRA-DeploymentFilters
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $sizeparam
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -5285,7 +4926,7 @@ function Get-vRA-DeploymentFilterTypes
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -5312,14 +4953,7 @@ function Get-vRA-DeploymentFilterTypes
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -5351,7 +4985,7 @@ function Remove-vRA-Deployment
     Version:       1.1
     Date:          04/02/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -5384,14 +5018,7 @@ function Remove-vRA-Deployment
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri+ $deploymentid+ "/requests"
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -5431,7 +5058,7 @@ function Get-vRA-DeploymentResources
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -5464,14 +5091,7 @@ function Get-vRA-DeploymentResources
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -5503,7 +5123,7 @@ function Get-vRA-DeploymentActions
     Version:       1.1
     Date:          04/01/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -5536,14 +5156,7 @@ function Get-vRA-DeploymentActions
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -5575,7 +5188,7 @@ function Get-vRA-DeploymentActions
       Version:       1.0
       Date:          12/23/2020
       Organization:  VMware
-      Blog:          http://bit.ly/MyvBl0g
+      Blog:          https://munishpalmakhija.com
       ==============================================================================================================================================
 
       .SYNOPSIS
@@ -5658,7 +5271,7 @@ function Get-vRA-DeploymentActions
       Version:       1.0
       Date:          12/23/2020
       Organization:  VMware
-      Blog:          http://bit.ly/MyvBl0g
+      Blog:          https://munishpalmakhija.com
       ==============================================================================================================================================
 
       .SYNOPSIS
@@ -5740,7 +5353,7 @@ function Get-vRA-DeploymentResourceActions
     Version:       1.0
     Date:          12/23/2020
     Organization:  VMware
-    Blog:          http://bit.ly/MyvBl0g
+    Blog:          https://munishpalmakhija.com
     ==============================================================================================================================================
 
     .SYNOPSIS
@@ -5779,14 +5392,7 @@ function Get-vRA-DeploymentResourceActions
             $url = $Connection.Server
             $vra_url = "https://"+ $url+ $vra_uri
             $cspauthtoken= $Connection.CSPToken
-            if ($url -ne "api.mgmt.cloud.vmware.com")
-            {
-              $SkipSSLCheck = $True
-            }
-            else
-            {
-              $SkipSSLCheck = $False
-            }            
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
             $vra_headers = @{"Accept"="application/json";
             "Content-Type"="application/json";
             "Authorization"="Bearer $cspauthtoken"; 
@@ -5818,7 +5424,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/23/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -5901,7 +5507,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/24/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -5984,7 +5590,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/23/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6076,7 +5682,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/23/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6167,7 +5773,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/23/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6258,7 +5864,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/23/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6340,7 +5946,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/23/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6422,7 +6028,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/23/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6504,7 +6110,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/23/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6587,7 +6193,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/24/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6670,7 +6276,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/24/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6746,7 +6352,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/24/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6822,7 +6428,7 @@ function Get-vRA-DeploymentResourceActions
         Version:       1.0
         Date:          12/29/2020
         Organization:  VMware
-        Blog:          http://bit.ly/MyvBl0g
+        Blog:          https://munishpalmakhija.com
         ==============================================================================================================================================
 
         .SYNOPSIS
@@ -6885,3 +6491,876 @@ function Get-vRA-DeploymentResourceActions
                 }
         }
     }}
+######################### Get-vRA-CodeStreamPipelines #########################
+
+function Get-vRA-CodeStreamPipelines
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns all CodeStream Pipelines in a particular Org 
+    .DESCRIPTION
+        This cmdlet retrieves all CodeStream Pipelines in a particular Org 
+    .EXAMPLE
+        Get-vRA-CodeStreamPipelines
+    .EXAMPLE
+        Get-vRA-CodeStreamPipelines | where{$_.name -match "Test"}        
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection 
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $vra_uri = "/codestream/api/pipelines/"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            ForEach ($link in $response.links)
+            {
+                $vra_uri = $link
+                $vra_url = "https://"+ $url+ $vra_uri
+                $pipelinedetails = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+                $pipelinedetails                
+            }
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### Get-vRA-CodeStreamPipelineByName #########################
+
+function Get-vRA-CodeStreamPipelineByName
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns a CodeStream Pipeline By Name in a particular Org
+    .DESCRIPTION
+        This cmdlet retrieves a CodeStream Pipeline By Name in a particular Org 
+    .EXAMPLE
+        Get-vRA-CodeStreamPipelineByName -PipelineName "Test"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$PipelineName        
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $vra_uri = "/codestream/api/pipelines"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ "$vra_uri`?`$filter=name eq '$PipelineName'"
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            ForEach ($link in $response.links)
+            {
+                $vra_uri = $link
+                $vra_url = "https://"+ $url+ $vra_uri
+                $pipelinedetails = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+                $pipelinedetails                
+            }
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### Get-vRA-CodeStreamPipelineById #########################
+
+function Get-vRA-CodeStreamPipelineById
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns a CodeStream Pipeline By Name in a particular Org
+    .DESCRIPTION
+        This cmdlet retrieves a CodeStream Pipeline By Name in a particular Org 
+    .EXAMPLE
+        Get-vRA-CodeStreamPipelineById -Id "33xxxx"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$Id      
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $vra_uri = "/codestream/api/pipelines"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ "$vra_uri`?`$filter=id eq '$Id'"
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            ForEach ($link in $response.links)
+            {
+                $vra_uri = $link
+                $vra_url = "https://"+ $url+ $vra_uri
+                $pipelinedetails = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+                $pipelinedetails                
+            }
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### Get-vRA-CodeStreamPipelineByProjectName #########################
+
+function Get-vRA-CodeStreamPipelineByProjectName
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns a CodeStream Pipeline By Project Name in a particular Org
+    .DESCRIPTION
+        This cmdlet retrieves a CodeStream Pipeline By Project Name in a particular Org 
+    .EXAMPLE
+        Get-vRA-CodeStreamPipelineByProjectName -ProjectName "Test"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$ProjectName   
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $vra_uri = "/codestream/api/pipelines"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ "$vra_uri`?`$filter=project eq '$ProjectName'"
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            ForEach ($link in $response.links)
+            {
+                $vra_uri = $link
+                $vra_url = "https://"+ $url+ $vra_uri
+                $pipelinedetails = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+                $pipelinedetails                
+            }
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### Get-vRA-CodeStreamPipelineExecution #########################
+
+function Get-vRA-CodeStreamPipelineExecution
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns a CodeStream Executions of a Pipeline in a particular Org
+    .DESCRIPTION
+        This cmdlet retrieves a CodeStream Executions of a Pipeline in a particular Org 
+    .EXAMPLE
+        Get-vRA-CodeStreamPipelineExecution -PipelineName "Test"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$PipelineName        
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $pipeline = Get-vRA-CodeStreamPipelineByName -PipelineName $PipelineName
+            $vra_uri = "/codestream/api/pipelines/" + $pipeline.id + "/executions"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            ForEach ($link in $response.links)
+            {
+                $vra_uri = $link
+                $vra_url = "https://"+ $url+ $vra_uri
+                $executiondetails = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+                $executiondetails                
+            }
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+######################### Get-vRA-CodeStreamEndpoints#########################
+
+function Get-vRA-CodeStreamEndpoints
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns all CodeStream Endpoints in a particular Org 
+    .DESCRIPTION
+        This cmdlet retrieves all CodeStream Endpoints in a particular Org 
+    .EXAMPLE
+        Get-vRA-CodeStreamEndpoints
+    .EXAMPLE
+        Get-vRA-CodeStreamEndpoints | where{$_.name -match "Test"}        
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection 
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $vra_uri = "/codestream/api/endpoints/"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            ForEach ($link in $response.links)
+            {
+                $vra_uri = $link
+                $vra_url = "https://"+ $url+ $vra_uri
+                $endpointdetails = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+                $endpointdetails                
+            }
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+######################### Get-vRA-CodeStreamEndpointByName #########################
+
+function Get-vRA-CodeStreamEndpointByName
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns a CodeStream Endpoint By Name in a particular Org
+    .DESCRIPTION
+        This cmdlet retrieves a CodeStream Endpoint By Name in a particular Org 
+    .EXAMPLE
+        Get-vRA-CodeStreamEndpointByName -EndpointName "Test"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$EndpointName        
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $vra_uri = "/codestream/api/endpoints"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ "$vra_uri`?`$filter=name eq '$EndpointName'"
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            ForEach ($link in $response.links)
+            {
+                $vra_uri = $link
+                $vra_url = "https://"+ $url+ $vra_uri
+                $endpointdetails = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+                $endpointdetails                
+            }
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### Get-vRA-CodeStreamEndpointById #########################
+
+function Get-vRA-CodeStreamEndpointById
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns a CodeStream Endpoint By Id in a particular Org
+    .DESCRIPTION
+        This cmdlet retrieves a CodeStream Endpoint By Id in a particular Org 
+    .EXAMPLE
+        Get-vRA-CodeStreamEndpointById -Id "xx333"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$Id       
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $vra_uri = "/codestream/api/endpoints"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ "$vra_uri`?`$filter=id eq '$Id'"
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            ForEach ($link in $response.links)
+            {
+                $vra_uri = $link
+                $vra_url = "https://"+ $url+ $vra_uri
+                $endpointdetails = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+                $endpointdetails                
+            }
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### Get-vRA-CodeStreamEndpointByProjectName #########################
+
+function Get-vRA-CodeStreamEndpointByProjectName
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Returns a CodeStream Endpoint By Project Name in a particular Org
+    .DESCRIPTION
+        This cmdlet retrieves a CodeStream Endpoint By Project Name in a particular Org 
+    .EXAMPLE
+        Get-vRA-CodeStreamEndpointByProjectName -ProjectName "Test"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$ProjectName   
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $vra_uri = "/codestream/api/endpoints"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ "$vra_uri`?`$filter=project eq '$ProjectName'"
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            ForEach ($link in $response.links)
+            {
+                $vra_uri = $link
+                $vra_url = "https://"+ $url+ $vra_uri
+                $endpointdetails = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+                $endpointdetails                
+            }
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### Export-vRA-CodeStreamPipeline #########################
+
+function Export-vRA-CodeStreamPipeline
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          05/28/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Exports a CodeStream Pipeline in a particular Org As YAML
+    .DESCRIPTION
+        This cmdlet Exports a CodeStream Pipeline in a particular Org As YAML 
+    .EXAMPLE
+        Export-vRA-CodeStreamPipeline -PipelineName "Test"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$PipelineName        
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $pipeline = Get-vRA-CodeStreamPipelineByName -PipelineName $PipelineName
+            $vra_uri = "/codestream/api/export?pipelines=" +$PipelineName +"&project=" + $pipeline.project
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json, text/plain, */*";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Get -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            $response
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+######################### Import-vRA-CodeStreamPipeline #########################
+
+function Import-vRA-CodeStreamPipeline
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          06/02/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Exports a CodeStream Pipeline in a particular Org As YAML
+    .DESCRIPTION
+        This cmdlet Imports a CodeStream Pipeline in a particular Org As YAML 
+    .EXAMPLE
+        $pipelineyaml = Get-Content pipeline.yaml | Out-String
+        Import-vRA-CodeStreamPipeline -PipelineBody $pipelineyaml
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$PipelineBody        
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            
+            $vra_uri = "/codestream/api/import"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json, text/plain, */*";
+            "Content-Type"="application/x-yaml";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers  -Body $PipelineBody -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            $response
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+
+######################### Delete-vRA-CodeStreamPipeline #########################
+
+function Delete-vRA-CodeStreamPipeline
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          06/02/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Deletes a CodeStream Pipeline in a particular Org
+    .DESCRIPTION
+        This cmdlet deletes a CodeStream Pipeline in a particular Org 
+    .EXAMPLE
+        Delete-vRA-CodeStreamPipeline -PipelineName "Test"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$PipelineName        
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            $pipeline = Get-vRA-CodeStreamPipelineByName -PipelineName $PipelineName 
+            $vra_uri = "/codestream/api/pipelines/" + $pipeline.id
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck           
+            $vra_headers = @{"Accept"="application/json";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $response = Invoke-RestMethod -Uri $vra_url -Method Delete -Headers $vra_headers -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            $response
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
+######################### Execute-vRA-CodeStreamPipeline #########################
+
+function Execute-vRA-CodeStreamPipeline
+{
+
+<#
+    .NOTES
+    ==============================================================================================================================================
+    Created by:    Munishpal Makhija                                                                                                              
+    Version:       1.0
+    Date:          06/03/2021
+    Organization:  VMware
+    Blog:          https://munishpalmakhija.com
+    ==============================================================================================================================================
+
+    .SYNOPSIS
+        Executes a CodeStream Pipeline with No Inputs in a particular Org
+    .DESCRIPTION
+        This cmdlet executes a CodeStream Pipeline with No Inputs in a particular Org 
+    .EXAMPLE
+        Execute-vRA-CodeStreamPipeline -PipelineName "Test"
+#>
+    param (
+    [Parameter (Mandatory=$False)]
+      # vRA Connection object
+      [ValidateNotNullOrEmpty()]
+      [PSCustomObject]$Connection=$defaultvRAConnection,
+      [Parameter (Mandatory=$True)]
+        # Deployment Name
+        [ValidateNotNullOrEmpty()]
+        [String]$PipelineName      
+  )
+  If (-Not $global:defaultvRAConnection) 
+    { 
+      Write-error "Not Connected to vRA Cloud, please use Connect-vRA-Cloud"
+    } 
+  else
+    {
+        try {
+            
+            $pipeline = Get-vRA-CodeStreamPipelineByName -PipelineName $PipelineName 
+            $vra_uri = "/codestream/api/pipelines/" + $pipeline.id + "/executions"
+            $url = $Connection.Server
+            $vra_url = "https://"+ $url+ $vra_uri
+            $cspauthtoken= $Connection.CSPToken
+            $SkipSSLCheck = $defaultvRAConnection.SkipSSLCheck          
+            $vra_headers = @{"Accept"="application/json, text/plain, */*";
+            "Content-Type"="application/json";
+            "Authorization"="Bearer $cspauthtoken"; 
+            }
+            $payload = @{"comments"="Executed from PowervRACloud";}
+            $body= $payload | Convertto-Json
+            $response = Invoke-RestMethod -Uri $vra_url -Method Post -Headers $vra_headers  -Body $body -ErrorAction:Stop -SkipCertificateCheck:$SkipSSLCheck
+            $response
+            } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nvRA Cloud Session is no longer valid, please re-run the Connect-vRA-Cloud cmdlet to retrieve a new token`n"
+                break
+            } 
+            else {
+                Write-Error "Error in retrieving vRA Deployments"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+    }
+}}
